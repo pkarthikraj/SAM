@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Globals:
+  Function:
+    AutoPublishAlias: live
+    Environment:
+      Variables:
+        SOME_VAR: some-value
+    MemorySize: 128
+    Runtime: nodejs6.10
+    Tags:
+      BUSINESS_REGION: NORTHAMERICA
+      BUSINESS_UNIT: RETAIL
+      CLIENT: MULTI_TENANT
+      NAME: RETAIL
+      PLATFORM: RETAIL
+    Timeout: 60
+    VpcConfig:
+      SecurityGroupIds:
+        Ref: MySecurityGroupIDs
+      SubnetIds:
+        Ref: MySubnetIDs
+Parameters:
+  MySecurityGroupIDs:
+    Description: Subnet IDs that is a List of SecurityGroup Id
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  MySubnetIDs:
+    Description: Subnet IDs that is a List of Subnet Id
+    Type: List<AWS::EC2::Subnet::Id>
+Resources:
+  ApiGatewayApi:
+    DependsOn:
+    - simpledatesvc
+    Properties:
+      DefinitionUri: s3://aws-sam-builds/api-swagger-spec.yml
+      StageName: nonprod
+    Type: AWS::Serverless::Api
+  ServerlessRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+      - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      RoleName: svrless-lambda-exec-role
+    Type: AWS::IAM::Role
+  simpledatesvc:
+    Properties:
+      CodeUri: s3://aws-sam-builds/486df021e940b78894bcd8406591610d
+      Events:
+        HTTPSAPI:
+          Properties:
+            Method: get
+            Path: /serverdate
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      FunctionName: local-date-svc
+      Handler: handler.getServerDateTime
+      Role:
+        Fn::GetAtt:
+        - ServerlessRole
+        - Arn
+    Type: AWS::Serverless::Function
+Transform: AWS::Serverless-2016-10-31

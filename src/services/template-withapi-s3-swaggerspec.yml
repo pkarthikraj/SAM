@@ -1,0 +1,126 @@
+---
+##################
+# Summary: AWS SAM (Serverless Application Model) template for provisioning serverless resources
+#
+# Description: The following AWS Resources are provisioned by this template:
+#                 - AWS Lambda Functions
+#                 - AWS API Gateway Resource and Paths for the Lambda Functions
+#                 - Custom Authorizer for the API GW
+#                 - IAM Permissions for the Custom Authorizer Lambda Function
+#
+#
+# Deployment Instructions: Run the following commands to execute the deployment template:
+#
+# 1. Install the node app dependencies by running the following command in the respective app 
+#    directories (service1 and service2):
+#     
+#    npm install
+#
+# 2. Upload the deployment artifacts to S3 bucket and create a deployment template with the S3 uri:
+# 
+#   aws cloudformation package \
+#  	  --template-file template-withapi-s3-swaggerspec.yml \
+#  	  --s3-bucket aws-sam-builds-330932647836 \
+#  	  --output-template-file packaged-template.yml
+#
+# 3. Execute the deployment template using the following command:
+#
+#   aws cloudformation deploy \
+#     --template-file packaged-template.yml \
+#     --stack-name aws-sam-test-v4 \
+#     --capabilities CAPABILITY_IAM
+#
+# aws cloudformation deploy --template-file packaged-template.yml --stack-name sprintpss --capabilities CAPABILITY_NAMED_IAM --parameter-overrides $( cat parameter.properties )  --profile asurion-retail-nonprod.dev --region us-east-1
+#
+# Refer the following links for more information on SAM:
+#     https://github.com/awslabs/serverless-application-model
+#     https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md
+#
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+# Globals section contains configuration shared across all the lambda functions in the template. Refer the
+# following link for more info on globals section:
+#     https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#globals-section
+
+# Refer the following link for Lambda Traffic Shifting configuration:
+#     https://github.com/awslabs/serverless-application-model/blob/master/docs/safe_lambda_deployments.rst
+
+
+Parameters:
+  MySubnetIDs:
+    Description: Subnet IDs that is a List of Subnet Id
+    Type: "List<AWS::EC2::Subnet::Id>"
+
+  MySecurityGroupIDs:
+    Description: Subnet IDs that is a List of SecurityGroup Id
+    Type: "List<AWS::EC2::SecurityGroup::Id>"
+
+  
+
+Globals:
+  Function:
+    Runtime: nodejs6.10
+    Timeout: 60
+    MemorySize: 128
+    Environment:
+      Variables:
+        SOME_VAR: some-value
+    VpcConfig:
+      SecurityGroupIds: !Ref MySecurityGroupIDs
+      SubnetIds: !Ref MySubnetIDs
+    Tags:
+      PLATFORM: RETAIL
+      BUSINESS_REGION: NORTHAMERICA
+      BUSINESS_UNIT: RETAIL
+      CLIENT: MULTI_TENANT  
+      NAME: RETAIL   
+    AutoPublishAlias: live    
+
+# Define all the resources being provisioned in the template in this section
+Resources:
+  simpledatesvc:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      FunctionName: local-date-svc
+      Handler: handler.getServerDateTime
+      CodeUri: ./test/    # CodeURI is dynamically set by the package command with the S3 object URI
+      # Role: !Join [ '', [ 'arn:aws:iam::', Ref: 'AWS::AccountId', ':role/svrless-lambda-exec-role' ] ]
+      Role: { "Fn::GetAtt": ["ServerlessRole", "Arn" ] }
+      Events:
+        HTTPSAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /serverdate
+            Method: get
+   
+
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    DependsOn:
+      - simpledatesvc
+      # - utcdtsvc
+    Properties:
+      StageName: nonprod
+      DefinitionUri: s3://aws-sam-builds/api-swagger-spec.yml 
+
+  ServerlessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: svrless-lambda-exec-role
+      AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+      ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+          - arn:aws:iam::aws:policy/AmazonS3FullAccess
+          - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+          - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
